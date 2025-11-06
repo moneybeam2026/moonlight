@@ -83,20 +83,22 @@ jobs:
             --query "services[0].taskDefinition" \
             --output text)
 
-          # Get task definition details
-          TASK_DEF_JSON=$(aws ecs describe-task-definition \
+          # Get task definition details and create new one
+          aws ecs describe-task-definition \
             --task-definition $TASK_DEFINITION \
-            --query "taskDefinition")
+            --query "taskDefinition" > task-def.json
 
-          # Update image tag in task definition
-          NEW_TASK_DEF=$(echo $TASK_DEF_JSON | jq --arg IMAGE "${{ steps.ecr-uri.outputs.ecr_uri }}:$IMAGE_TAG" \
-            '.containerDefinitions[0].image = $IMAGE |
-             del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
+          # Update image in task definition
+          jq --arg IMAGE "${{ steps.ecr-uri.outputs.ecr_uri }}:$IMAGE_TAG" \
+            'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy) |
+             .containerDefinitions[0].image = $IMAGE' \
+            task-def.json > new-task-def.json
 
           # Register new task definition
-          NEW_TASK_ARN=$(echo $NEW_TASK_DEF | jq -r '@json' | \
-            aws ecs register-task-definition --cli-input-json file:///dev/stdin \
-            --query "taskDefinition.taskDefinitionArn" --output text)
+          NEW_TASK_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://new-task-def.json \
+            --query "taskDefinition.taskDefinitionArn" \
+            --output text)
 
           # Update service with new task definition
           aws ecs update-service \
