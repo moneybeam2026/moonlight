@@ -127,8 +127,8 @@ Resources:
               awslogs-stream-prefix: ecs
           HealthCheck:
             Command:
-              - CMD-SHELL
-              - node -e "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+              - "CMD-SHELL"
+              - "node -e \"require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})\""
             Interval: 30
             Timeout: 5
             Retries: 3
@@ -164,8 +164,8 @@ Resources:
         MaximumPercent: 200
         MinimumHealthyPercent: 100
         DeploymentCircuitBreaker:
-          Enable: true
-          Rollback: true
+          Enable: false
+          Rollback: false
       Tags:
         - Key: Name
           Value: !Sub ${EnvironmentName}-service
