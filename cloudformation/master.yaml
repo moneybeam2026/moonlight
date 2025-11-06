@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Master Stack for NestJS ECS Application Infrastructure'
+
+Parameters:
+  EnvironmentName:
+    Description: Environment name prefix
+    Type: String
+    Default: nestjs-prod
+
+  ImageTag:
+    Description: Docker image tag to deploy
+    Type: String
+    Default: latest
+
+  DesiredCount:
+    Description: Desired number of ECS tasks
+    Type: Number
+    Default: 2
+
+  ContainerCpu:
+    Description: Container CPU units (1024 = 1 vCPU)
+    Type: Number
+    Default: 256
+
+  ContainerMemory:
+    Description: Container memory in MB
+    Type: Number
+    Default: 512
+
+  TemplatesBucket:
+    Description: S3 bucket containing nested CloudFormation templates
+    Type: String
+
+Resources:
+  # VPC and Networking Stack
+  VPCStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${TemplatesBucket}.s3.${AWS::Region}.amazonaws.com/01-vpc.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-vpc-stack
+
+  # ECR Repository Stack
+  ECRStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${TemplatesBucket}.s3.${AWS::Region}.amazonaws.com/02-ecr.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-ecr-stack
+
+  # Application Load Balancer Stack
+  ALBStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: VPCStack
+    Properties:
+      TemplateURL: !Sub https://${TemplatesBucket}.s3.${AWS::Region}.amazonaws.com/03-alb.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-alb-stack
+
+  # ECS Cluster and Services Stack
+  ECSStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - VPCStack
+      - ECRStack
+      - ALBStack
+    Properties:
+      TemplateURL: !Sub https://${TemplatesBucket}.s3.${AWS::Region}.amazonaws.com/04-ecs.yaml
+      Parameters:
+        EnvironmentName: !Ref EnvironmentName
+        ImageTag: !Ref ImageTag
+        DesiredCount: !Ref DesiredCount
+        ContainerCpu: !Ref ContainerCpu
+        ContainerMemory: !Ref ContainerMemory
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-ecs-stack
+
+Outputs:
+  ApplicationURL:
+    Description: URL of the deployed application
+    Value: !Sub
+      - http://${LoadBalancerUrl}
+      - LoadBalancerUrl: !GetAtt ALBStack.Outputs.LoadBalancerUrl
+
+  ECRRepositoryUri:
+    Description: ECR Repository URI for pushing Docker images
+    Value: !GetAtt ECRStack.Outputs.ECRRepositoryUri
+
+  ECSClusterName:
+    Description: Name of the ECS Cluster
+    Value: !GetAtt ECSStack.Outputs.ECSCluster
+
+  ECSServiceName:
+    Description: Name of the ECS Service
+    Value: !GetAtt ECSStack.Outputs.ECSService

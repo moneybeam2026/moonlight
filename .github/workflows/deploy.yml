@@ -1,0 +1,133 @@
+name: Deploy to AWS ECS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ENVIRONMENT_NAME: nestjs-prod
+
+jobs:
+  deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Get ECR Repository URI
+        id: ecr-uri
+        run: |
+          ECR_URI=$(aws cloudformation describe-stacks \
+            --stack-name ${ENVIRONMENT_NAME}-ecr-stack \
+            --query "Stacks[0].Outputs[?OutputKey=='ECRRepositoryUri'].OutputValue" \
+            --output text 2>/dev/null || echo "")
+
+          if [ -z "$ECR_URI" ]; then
+            echo "ECR stack not found. Please deploy infrastructure first."
+            exit 1
+          fi
+
+          echo "ecr_uri=$ECR_URI" >> $GITHUB_OUTPUT
+
+      - name: Build Docker image
+        env:
+          ECR_REPOSITORY: ${{ steps.ecr-uri.outputs.ecr_uri }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REPOSITORY:$IMAGE_TAG $ECR_REPOSITORY:latest
+
+      - name: Push Docker image to ECR
+        env:
+          ECR_REPOSITORY: ${{ steps.ecr-uri.outputs.ecr_uri }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker push $ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REPOSITORY:latest
+
+      - name: Update ECS Service
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Get cluster and service names
+          CLUSTER_NAME=$(aws cloudformation describe-stacks \
+            --stack-name ${ENVIRONMENT_NAME}-ecs-stack \
+            --query "Stacks[0].Outputs[?OutputKey=='ECSCluster'].OutputValue" \
+            --output text)
+
+          SERVICE_NAME=$(aws cloudformation describe-stacks \
+            --stack-name ${ENVIRONMENT_NAME}-ecs-stack \
+            --query "Stacks[0].Outputs[?OutputKey=='ECSService'].OutputValue" \
+            --output text)
+
+          # Get current task definition
+          TASK_DEFINITION=$(aws ecs describe-services \
+            --cluster $CLUSTER_NAME \
+            --services $SERVICE_NAME \
+            --query "services[0].taskDefinition" \
+            --output text)
+
+          # Get task definition details
+          TASK_DEF_JSON=$(aws ecs describe-task-definition \
+            --task-definition $TASK_DEFINITION \
+            --query "taskDefinition")
+
+          # Update image tag in task definition
+          NEW_TASK_DEF=$(echo $TASK_DEF_JSON | jq --arg IMAGE "${{ steps.ecr-uri.outputs.ecr_uri }}:$IMAGE_TAG" \
+            '.containerDefinitions[0].image = $IMAGE |
+             del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
+
+          # Register new task definition
+          NEW_TASK_ARN=$(echo $NEW_TASK_DEF | jq -r '@json' | \
+            aws ecs register-task-definition --cli-input-json file:///dev/stdin \
+            --query "taskDefinition.taskDefinitionArn" --output text)
+
+          # Update service with new task definition
+          aws ecs update-service \
+            --cluster $CLUSTER_NAME \
+            --service $SERVICE_NAME \
+            --task-definition $NEW_TASK_ARN \
+            --force-new-deployment
+
+      - name: Wait for service to stabilize
+        run: |
+          CLUSTER_NAME=$(aws cloudformation describe-stacks \
+            --stack-name ${ENVIRONMENT_NAME}-ecs-stack \
+            --query "Stacks[0].Outputs[?OutputKey=='ECSCluster'].OutputValue" \
+            --output text)
+
+          SERVICE_NAME=$(aws cloudformation describe-stacks \
+            --stack-name ${ENVIRONMENT_NAME}-ecs-stack \
+            --query "Stacks[0].Outputs[?OutputKey=='ECSService'].OutputValue" \
+            --output text)
+
+          echo "Waiting for ECS service to stabilize..."
+          aws ecs wait services-stable \
+            --cluster $CLUSTER_NAME \
+            --services $SERVICE_NAME
+
+      - name: Get Application URL
+        run: |
+          ALB_URL=$(aws cloudformation describe-stacks \
+            --stack-name ${ENVIRONMENT_NAME}-alb-stack \
+            --query "Stacks[0].Outputs[?OutputKey=='LoadBalancerUrl'].OutputValue" \
+            --output text)
+
+          echo "Application deployed successfully!"
+          echo "URL: http://$ALB_URL"
