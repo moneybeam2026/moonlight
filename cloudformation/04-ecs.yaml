@@ -77,6 +77,14 @@ Resources:
                   - ecr:GetDownloadUrlForLayer
                   - ecr:BatchGetImage
                 Resource: '*'
+        - PolicyName: SecretsManagerAccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:nestjs-prod/app-secrets-*'
 
   # ECS Task Role (for application permissions)
   TaskRole:
@@ -119,6 +127,23 @@ Resources:
               Value: production
             - Name: PORT
               Value: '3000'
+          Secrets:
+            - Name: MONGODB_URI
+              ValueFrom: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:nestjs-prod/app-secrets-HAR8gX:MONGODB_URI::'
+            - Name: MONGODB_DATABASE
+              ValueFrom: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:nestjs-prod/app-secrets-HAR8gX:MONGODB_DATABASE::'
+            - Name: MONGODB_USER
+              ValueFrom: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:nestjs-prod/app-secrets-HAR8gX:MONGODB_USER::'
+            - Name: MONGODB_PASSWORD
+              ValueFrom: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:nestjs-prod/app-secrets-HAR8gX:MONGODB_PASSWORD::'
+            - Name: CORS_ORIGIN
+              ValueFrom: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:nestjs-prod/app-secrets-HAR8gX:CORS_ORIGIN::'
+            - Name: CORS_CREDENTIALS
+              ValueFrom: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:nestjs-prod/app-secrets-HAR8gX:CORS_CREDENTIALS::'
+            - Name: JWT_SECRET
+              ValueFrom: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:nestjs-prod/app-secrets-HAR8gX:JWT_SECRET::'
+            - Name: JWT_EXPIRATION
+              ValueFrom: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:nestjs-prod/app-secrets-HAR8gX:JWT_EXPIRATION::'
           LogConfiguration:
             LogDriver: awslogs
             Options:

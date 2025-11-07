@@ -4,8 +4,20 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Enable CORS if needed
-  app.enableCors();
+  // Configure CORS from environment variables
+  const corsOrigin = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',')
+    : '*';
+  const corsCredentials = process.env.CORS_CREDENTIALS === 'true';
+
+  app.enableCors({
+    origin: corsOrigin,
+    credentials: corsCredentials,
+  });
+
+  console.log('CORS configured with origin:', corsOrigin);
+  console.log('Environment:', process.env.NODE_ENV);
+  console.log('MongoDB URI configured:', !!process.env.MONGODB_URI);
 
   // Health check endpoint
   app.getHttpAdapter().get('/health', (req, res) => {
