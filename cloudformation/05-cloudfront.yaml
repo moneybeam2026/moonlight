@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFront Distribution for NestJS API with Free HTTPS'
+
+Parameters:
+  EnvironmentName:
+    Description: Environment name prefix
+    Type: String
+    Default: nestjs-prod
+
+Resources:
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub ${EnvironmentName} API with HTTPS
+        HttpVersion: http2and3
+        PriceClass: PriceClass_100
+
+        Origins:
+          - Id: nestjs-alb-origin
+            DomainName: !ImportValue
+              Fn::Sub: ${EnvironmentName}-LoadBalancerUrl
+            CustomOriginConfig:
+              HTTPPort: 80
+              HTTPSPort: 443
+              OriginProtocolPolicy: http-only
+              OriginSSLProtocols:
+                - TLSv1.2
+              OriginReadTimeout: 60
+              OriginKeepaliveTimeout: 5
+
+        DefaultCacheBehavior:
+          TargetOriginId: nestjs-alb-origin
+          ViewerProtocolPolicy: redirect-to-https
+          Compress: true
+
+          # Allow all HTTP methods for API
+          AllowedMethods:
+            - DELETE
+            - GET
+            - HEAD
+            - OPTIONS
+            - PATCH
+            - POST
+            - PUT
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+
+          # Cache configuration (minimal caching for API)
+          CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad  # CachingDisabled managed policy
+          OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3  # AllViewer managed policy
+          ResponseHeadersPolicyId: 5cc3b908-e619-4b99-88e5-2cf7f45965bd  # CORS-With-Preflight managed policy
+
+        # Custom error responses
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 403
+            ResponsePagePath: /error.html
+            ErrorCachingMinTTL: 10
+          - ErrorCode: 404
+            ResponseCode: 404
+            ResponsePagePath: /error.html
+            ErrorCachingMinTTL: 10
+          - ErrorCode: 500
+            ResponseCode: 500
+            ResponsePagePath: /error.html
+            ErrorCachingMinTTL: 10
+
+Outputs:
+  CloudFrontDomain:
+    Description: CloudFront Distribution Domain (use with HTTPS)
+    Value: !GetAtt CloudFrontDistribution.DomainName
+    Export:
+      Name: !Sub ${EnvironmentName}-CloudFrontDomain
+
+  CloudFrontURL:
+    Description: Full HTTPS URL for your API
+    Value: !Sub https://${CloudFrontDistribution.DomainName}
+
+  CloudFrontId:
+    Description: CloudFront Distribution ID
+    Value: !Ref CloudFrontDistribution
+    Export:
+      Name: !Sub ${EnvironmentName}-CloudFrontId
