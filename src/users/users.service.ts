@@ -16,8 +16,8 @@ export class UsersService {
     {
       id: 1,
       firstName: 'John',
-      lastName: 'Doe',
-      email: 'john.doe@example.com',
+      lastName: 'Does',
+      email: 'john.does@example.com',
       age: 28,
       city: 'New York',
       createdAt: new Date('2024-01-15'),
